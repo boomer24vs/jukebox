@@ -62,6 +62,34 @@ PRESET = {
     "xp_bar_empty": (48, 48, 48),
     "xp_bar_fill": (128, 255, 32),
     "xp_bar_fill_shade": (76, 168, 18),
+    "chest_scale": 1.5,               # small chest next to the jukebox
+    "arrow_scale": 3,                 # indicator arrow above the small chest
+    "arrow_tip_y": 6,                 # tip position below the top corner of the small chest
+    "arrow_bob": 3,                   # pixels up and down
+    "arrow_bob_period": 2.0,          # seconds for one up-and-down
+    "chest_gap": 4,                   # pixels between the jukebox and the small chest
+    "chest_ui_scale": 3,              # screen pixels per GUI texel
+    "chest_ui_pos": (404, 78),        # top-left of the chest GUI, right of the jukebox
+    "chest_ui_margin": 16,            # extra window width on the right while the chest is open
+    "chest_region_delay": 0.3,        # seconds after opening before the clickable area is set again
+    "chest_ui_size": (176, 95),       # texels: single chest GUI without the player inventory
+    "chest_columns": 9,
+    "chest_rows": 3,
+    "chest_slots_origin": (7, 17),    # texels, top-left of the first 18x18 slot
+    "chest_title": "Chest",
+    "chest_title_pos": (8, 10),       # texels, left edge and vertical centre
+    "chest_text_color": (64, 64, 64),
+    "chest_prev_button": (7, 75, 20, 14),
+    "chest_next_button": (149, 75, 20, 14),
+    "chest_page_pos": (88, 82),       # texels, centre of the page number
+    "slot_hover": (255, 255, 255, 128),
+    "tooltip_offset": (12, -12),      # texels from the cursor
+    "tooltip_background": (16, 0, 16, 240),
+    "tooltip_border_top": (80, 0, 255, 80),
+    "tooltip_border_bottom": (40, 0, 127, 80),
+    "tooltip_name": "Music Disc",
+    "tooltip_name_color": (85, 255, 255),
+    "tooltip_title_color": (170, 170, 170),
 }
 
 
@@ -143,6 +171,12 @@ def open_window(p):
     window = pygame.Window("Jukebox", (width, height), ((desktop_w - width) // 2, p["window_top_margin"]),
                            borderless=True, always_on_top=p["window_layer"] == "top")
     return window.get_surface(), window
+
+
+def resize_window(window, size):
+    """The window grows to the right while the chest is open; the jukebox does not move."""
+    window.size = size
+    return window.get_surface()
 
 
 def present(window, screen, frame, transparent):
@@ -356,6 +390,104 @@ def draw_now_playing(frame, font, text, age, p):
         frame.blit(img, ((frame.get_width() - img.get_width()) / 2 + off, p["text_y"] - img.get_height() / 2 + off))
 
 
+def draw_text(surface, font, text, color, x, center_y, shadow=None, centered=False):
+    """Text left-aligned (or centred) on x, vertically centred on center_y, optional in-game drop shadow."""
+    unit = max(1, font.point_size // 8)
+    img = font.render(text, False, color)
+    left = x - img.get_width() / 2 if centered else x
+    top = center_y - img.get_height() / 2
+    if shadow:
+        surface.blit(font.render(text, False, shadow), (left + unit, top + unit))
+    surface.blit(img, (left, top))
+
+
+def chest_background(font, p):
+    """Chest GUI drawn once: panel, slots, page buttons and title, scaled to screen pixels."""
+    w, h = p["chest_ui_size"]
+    sx, sy = p["chest_slots_origin"]
+    tex = textures.chest_panel(w, h)
+    for r in range(p["chest_rows"]):
+        for c in range(p["chest_columns"]):
+            textures.draw_slot(tex, sx + 18 * c, sy + 18 * r)
+    textures.draw_button(tex, p["chest_prev_button"])
+    textures.draw_button(tex, p["chest_next_button"])
+    s = p["chest_ui_scale"]
+    surface = pygame.transform.scale(tex, (w * s, h * s))
+    draw_text(surface, font, p["chest_title"], p["chest_text_color"], p["chest_title_pos"][0] * s,
+              p["chest_title_pos"][1] * s)
+    for (x, y, bw, bh), label in ((p["chest_prev_button"], "<"), (p["chest_next_button"], ">")):
+        draw_text(surface, font, label, (255, 255, 255), (x + bw / 2) * s, (y + bh / 2) * s, (63, 63, 63), True)
+    return surface
+
+
+def ui_rect(texel_rect, p):
+    x, y, w, h = texel_rect
+    s, (ox, oy) = p["chest_ui_scale"], p["chest_ui_pos"]
+    return pygame.Rect(ox + x * s, oy + y * s, w * s, h * s)
+
+
+def slot_at(pos, p):
+    """Index of the chest slot under pos on the current page, or None."""
+    s, (ox, oy), (sx, sy) = p["chest_ui_scale"], p["chest_ui_pos"], p["chest_slots_origin"]
+    c, r = ((pos[0] - ox) // s - sx) // 18, ((pos[1] - oy) // s - sy) // 18
+    if 0 <= c < p["chest_columns"] and 0 <= r < p["chest_rows"]:
+        return r * p["chest_columns"] + c
+    return None
+
+
+def draw_chest_ui(frame, background, font, discs, page, pages, hover_slot, p):
+    """Panel, the discs of this page, white veil on the hovered slot, page number."""
+    s, (sx, sy) = p["chest_ui_scale"], p["chest_slots_origin"]
+    frame.blit(background, p["chest_ui_pos"])
+    per_page = p["chest_columns"] * p["chest_rows"]
+    for i, sprite in enumerate(discs[page * per_page:(page + 1) * per_page]):
+        c, r = i % p["chest_columns"], i // p["chest_columns"]
+        frame.blit(sprite, ui_rect((sx + 1 + 18 * c, sy + 1 + 18 * r, 16, 16), p))
+    if hover_slot is not None:
+        c, r = hover_slot % p["chest_columns"], hover_slot // p["chest_columns"]
+        veil = pygame.Surface((16 * s, 16 * s), pygame.SRCALPHA)
+        veil.fill(p["slot_hover"])
+        frame.blit(veil, ui_rect((sx + 1 + 18 * c, sy + 1 + 18 * r, 16, 16), p))
+    page_x, page_y = ui_rect((*p["chest_page_pos"], 0, 0), p).topleft
+    draw_text(frame, font, f"{page + 1}/{pages}", p["chest_text_color"], page_x, page_y, centered=True)
+
+
+def draw_tooltip(frame, font, lines, pos, p):
+    """In-game item tooltip: near-black purple box, purple gradient border, text with drop shadow."""
+    s = p["chest_ui_scale"]
+    imgs = [font.render(text, False, color) for text, color in lines]
+    w = max(img.get_width() for img in imgs)
+    h = 8 * s + 12 * s * (len(lines) - 1)
+    x = min(pos[0] + p["tooltip_offset"][0] * s, frame.get_width() - w - 5 * s)
+    y = max(4 * s, pos[1] + p["tooltip_offset"][1] * s)
+    box = pygame.Surface((w + 10 * s, h + 8 * s), pygame.SRCALPHA)
+    bw, bh = box.get_size()
+    box.fill(p["tooltip_background"], (s, 0, bw - 2 * s, bh))
+    box.fill(p["tooltip_background"], (0, s, bw, bh - 2 * s))
+    for row in range(1, bh // s - 1):
+        k = (row - 1) / max(1, bh // s - 3)
+        color = [round(lerp(a, b, k)) for a, b in zip(p["tooltip_border_top"], p["tooltip_border_bottom"])]
+        if row in (1, bh // s - 2):
+            box.fill(color, (s, row * s, bw - 2 * s, s))
+        else:
+            box.fill(color, (s, row * s, s, s))
+            box.fill(color, (bw - 2 * s, row * s, s, s))
+    frame.blit(box, (x - 4 * s, y - 4 * s))
+    for i, (text, color) in enumerate(lines):
+        draw_text(frame, font, text, color, x + s, y + 4 * s + 12 * s * i, tuple(c // 4 for c in color))
+
+
+def draw_arrow(frame, sprite, tip, now, p):
+    """Indicator arrow pointing down at the chest, gently moving up and down."""
+    bob = p["arrow_bob"] * math.sin(now * math.tau / p["arrow_bob_period"])
+    frame.blit(sprite, (tip[0] - sprite.get_width() // 2, round(tip[1] - sprite.get_height() + bob)))
+
+
+def now_playing(track, p):
+    """Disc sprite and message shown when a track starts."""
+    return textures.disc(track["label"], p["disc_scale"]), f"Now Playing: C418 - {track['title']}"
+
+
 def main(p=PRESET):
     pygame.mixer.pre_init(44100)
     pygame.init()
@@ -381,6 +513,24 @@ def main(p=PRESET):
     font = pygame.font.Font(font_path, p["font_size"])
     jukebox = player.Player(player.load_tracks(PROJECT_DIR / "sounds", PROJECT_DIR / "tracks.yaml"),
                             p["volume_default"])
+    # Chest order: in-game discs first, then the rainbow of the other tracks.
+    chest_tracks = sorted(jukebox.tracks, key=lambda t: t["disc"] == "generic")
+    for track, label in zip(chest_tracks, textures.label_colors([t["disc"] for t in chest_tracks])):
+        track["label"] = label
+    chest_discs = [textures.disc(t["label"], p["chest_ui_scale"]) for t in chest_tracks]
+    per_page = p["chest_columns"] * p["chest_rows"]
+    pages, page = math.ceil(len(chest_tracks) / per_page), 0
+    ui_font = pygame.font.Font(font_path, 8 * p["chest_ui_scale"])
+    chest_ui = chest_background(ui_font, p)
+    chest_ui_rect = pygame.Rect(p["chest_ui_pos"], chest_ui.get_size())
+    open_size = (chest_ui_rect.right + p["chest_ui_margin"], p["window_size"][1])
+    chest, chest_geometry = textures.iso_cube(textures.chest_top(), textures.chest_front(), p["chest_scale"],
+                                              right_side=textures.chest_side())
+    chest_mask = pygame.mask.from_surface(chest)
+    arrow = textures.arrow(p["arrow_scale"])
+    chest_pos = (cube_pos[0] + cube.get_width() + p["chest_gap"], cube_pos[1] + cube.get_height() - chest.get_height())
+    arrow_tip = (chest_pos[0] + chest.get_width() // 2, chest_pos[1] + p["arrow_tip_y"])
+    chest_open, chest_hover, region_timer = False, False, None
 
     disc_sprite, disc_progress = None, 0.0
     message, message_age = "", math.inf
@@ -393,7 +543,8 @@ def main(p=PRESET):
     if x_window is not None and p["window_layer"] == "below":
         keep_below(x_window)
     # The window keeps its size: the compact mode is drawn inside it and only the clickable area changes.
-    normal_region = mask_rects(cube_mask, cube_pos)
+    normal_region = mask_rects(cube_mask, cube_pos) + mask_rects(chest_mask, chest_pos)
+    chest_region = normal_region + [tuple(chest_ui_rect)]
     compact_region = [(compact_rect.x, small_cube_pos[1], compact_rect.width, compact_rect.bottom - small_cube_pos[1])]
     set_input_region(x_window, normal_region)
     now = 0.0
@@ -404,6 +555,18 @@ def main(p=PRESET):
         x, y = pos[0] - cube_pos[0], pos[1] - cube_pos[1]
         return 0 <= x < cube.get_width() and 0 <= y < cube.get_height() and cube_mask.get_at((x, y))
 
+    def on_chest(pos):
+        x, y = pos[0] - chest_pos[0], pos[1] - chest_pos[1]
+        return 0 <= x < chest.get_width() and 0 <= y < chest.get_height() and chest_mask.get_at((x, y))
+
+    def show_chest(show):
+        """Returns (chest_open, screen, region_timer): the window surface changes with the window size.
+        GNOME clips the clickable area to the window size known when it is set: resize first, set it after,
+        and once more after chest_region_delay, when GNOME has applied the new size."""
+        surface = resize_window(window, open_size if show else p["window_size"])
+        set_input_region(x_window, chest_region if show else normal_region)
+        return show, surface, p["chest_region_delay"] if show else None
+
     running = True
     while running:
         # Capped so a slow frame does not make the animations jump.
@@ -413,15 +576,17 @@ def main(p=PRESET):
             if event.type == pygame.QUIT:
                 running = False
             elif event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
-                running = False
+                if chest_open:
+                    chest_open, screen, region_timer = show_chest(False)
+                else:
+                    running = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
                 running = False
             elif event.type == player.TRACK_END:
                 if jukebox.on_track_end():
                     if p["autoplay"]:
-                        track = jukebox.play_random()
-                        disc_sprite, disc_progress = textures.disc(track["disc"], p["disc_scale"]), 0.0
-                        message, message_age = f"Now Playing: C418 - {track['title']}", 0.0
+                        disc_sprite, message = now_playing(jukebox.play_random(), p)
+                        disc_progress, message_age = 0.0, 0.0
                     else:
                         notes.clear()
                         compact_notes.clear()
@@ -432,26 +597,44 @@ def main(p=PRESET):
                     compact_target, idle = False, 0.0
             elif compact_t > 0:
                 continue                                # no clicks or wheel until the normal layout is back
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and on_chest(event.pos):
+                chest_open, screen, region_timer = show_chest(not chest_open)
+            elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and chest_open \
+                    and chest_ui_rect.collidepoint(event.pos):
+                slot_index = slot_at(event.pos, p)
+                if slot_index is not None and page * per_page + slot_index < len(chest_tracks):
+                    # Same animation as a click on the jukebox, then the chest closes.
+                    disc_sprite, message = now_playing(jukebox.play(chest_tracks[page * per_page + slot_index]), p)
+                    disc_progress, message_age, click_t = 0.0, 0.0, 0.0
+                    chest_open, screen, region_timer = show_chest(False)
+                elif ui_rect(p["chest_prev_button"], p).collidepoint(event.pos):
+                    page = (page - 1) % pages
+                elif ui_rect(p["chest_next_button"], p).collidepoint(event.pos):
+                    page = (page + 1) % pages
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and on_cube(event.pos):
                 press_pos, dragging = event.pos, False
                 drag_start = (window.position, pointer_on_screen())
                 drag_last = window.position
             elif event.type == pygame.MOUSEMOTION:
-                hover = on_cube(event.pos)
+                hover, chest_hover = on_cube(event.pos), on_chest(event.pos)
                 if press_pos and not dragging:
                     dragging = math.hypot(event.pos[0] - press_pos[0], event.pos[1] - press_pos[1]) > p["drag_threshold"]
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if press_pos and not dragging:
-                    track = jukebox.play_random()
-                    disc_sprite, disc_progress = textures.disc(track["disc"], p["disc_scale"]), 0.0
-                    message, message_age = f"Now Playing: C418 - {track['title']}", 0.0
-                    click_t = 0.0
+                    disc_sprite, message = now_playing(jukebox.play_random(), p)
+                    disc_progress, message_age, click_t = 0.0, 0.0, 0.0
                 press_pos, dragging, idle = None, False, 0.0
             elif event.type == pygame.MOUSEWHEEL and on_cube(pygame.mouse.get_pos()):
                 jukebox.set_volume(jukebox.volume + event.y * p["volume_step"])
                 idle = 0.0
             elif event.type == pygame.WINDOWLEAVE:
-                hover = False
+                hover, chest_hover = False, False
+
+        if region_timer is not None:
+            region_timer -= dt
+            if region_timer <= 0:
+                set_input_region(x_window, chest_region)
+                region_timer = None
 
         if dragging:
             # One move per frame, computed from screen coordinates: no feedback loop with the window position.
@@ -461,7 +644,7 @@ def main(p=PRESET):
                 move_window(window, x_window, target)
                 drag_last = target
 
-        if hover or press_pos:
+        if hover or press_pos or chest_open:
             idle = 0.0
         elif not compact_target:
             idle += dt
@@ -498,10 +681,13 @@ def main(p=PRESET):
                 else:
                     notes.append(spawn_note(slot, p["note_spread"], note_scale, p["note_rise"]))
 
-        frame = pygame.Surface(p["window_size"], pygame.SRCALPHA)
+        frame = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
         if k < 1:
-            # Disc, notes and message fade out together while the cube shrinks.
+            # Disc, notes, message and small chest fade out together while the cube shrinks.
             extras = pygame.Surface(p["window_size"], pygame.SRCALPHA)
+            extras.blit(chest, chest_pos)
+            if not chest_open and k == 0:
+                draw_arrow(extras, arrow, arrow_tip, now, p)
             if disc_sprite:
                 draw_disc(extras, disc_sprite, slot, disc_progress, now, p)
             draw_notes(extras, notes, dt, p)
@@ -516,6 +702,8 @@ def main(p=PRESET):
                 frame.blit(extras, (0, 0))
                 if hover:
                     draw_hover(frame, geometry, cube_pos, p)
+                if chest_hover:
+                    draw_hover(frame, chest_geometry, chest_pos, p)
         else:
             draw_moving_cube(frame, cubes, cube_pos, small_cube_pos, k)
         if k > 0:
@@ -526,6 +714,16 @@ def main(p=PRESET):
                                   compact_rect.topleft, p)
             info.set_alpha(round(255 * k))
             frame.blit(info, (0, 0))
+        if chest_open:
+            mouse = pygame.mouse.get_pos()
+            hover_slot = slot_at(mouse, p) if chest_ui_rect.collidepoint(mouse) else None
+            if hover_slot is not None and page * per_page + hover_slot >= len(chest_tracks):
+                hover_slot = None
+            draw_chest_ui(frame, chest_ui, ui_font, chest_discs, page, pages, hover_slot, p)
+            if hover_slot is not None:
+                track = chest_tracks[page * per_page + hover_slot]
+                draw_tooltip(frame, ui_font, [(p["tooltip_name"], p["tooltip_name_color"]),
+                                              (f"C418 - {track['title']}", p["tooltip_title_color"])], mouse, p)
         present(window, screen, frame, transparent)
 
     pygame.quit()

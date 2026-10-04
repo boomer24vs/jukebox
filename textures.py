@@ -1,5 +1,6 @@
 """Procedural Minecraft-style pixel art: jukebox textures, isometric cube, music discs, note particle."""
 
+import colorsys
 import math
 import random
 
@@ -16,6 +17,24 @@ TEXTURE_PRESET = {
     "shade_top": 1.0,
     "shade_left": 0.8,
     "shade_right": 0.6,
+    "chest_border": (58, 36, 14),
+    "chest_wood": (160, 106, 44),
+    "chest_wood_dark": (138, 90, 36),
+    "chest_latch": (190, 190, 190),
+    "chest_latch_rim": (52, 52, 52),
+    "label_saturation": 0.65,         # rainbow labels of the tracks without an in-game disc
+    "label_value": 0.85,
+    "ui_body": (198, 198, 198),
+    "ui_light": (255, 255, 255),
+    "ui_dark": (85, 85, 85),
+    "ui_outline": (0, 0, 0),
+    "slot_body": (139, 139, 139),
+    "slot_shadow": (55, 55, 55),
+    "button_body": (111, 111, 111),
+    "button_light": (170, 170, 170),
+    "button_dark": (56, 56, 56),
+    "arrow_fill": (255, 236, 178),
+    "arrow_outline": (28, 24, 20),
 }
 
 # Label colour of each disc, close to the in-game items
@@ -74,8 +93,9 @@ def _shade(color, k):
     return tuple(int(c * k) for c in color[:3])
 
 
-def iso_cube(top, side, scale, p=TEXTURE_PRESET):
-    """Draw a 16x16-textured cube in 2:1 isometric. Returns (surface, geometry dict)."""
+def iso_cube(top, side, scale, p=TEXTURE_PRESET, right_side=None):
+    """Draw a 16x16-textured cube in 2:1 isometric. Returns (surface, geometry dict).
+    side is the left (front) face, right_side defaults to it."""
     s, h = scale, round(scale * 7 / 6)
     u, v = (s, s / 2), (-s, s / 2)
     width, height = 32 * s, 16 * s + 16 * h
@@ -98,7 +118,7 @@ def iso_cube(top, side, scale, p=TEXTURE_PRESET):
     right = pt(t, u, u, 16, 0)
     face(top, t, u, v, p["shade_top"])
     face(side, left, u, down, p["shade_left"])
-    face(side, middle, (-v[0], -v[1]), down, p["shade_right"])
+    face(right_side or side, middle, (-v[0], -v[1]), down, p["shade_right"])
 
     bottom = (middle[0], middle[1] + 16 * h)
     geometry = {
@@ -109,9 +129,22 @@ def iso_cube(top, side, scale, p=TEXTURE_PRESET):
     return surf, geometry
 
 
-def disc(name, scale):
-    """Music disc item icon, scaled with nearest-neighbour."""
-    label = DISC_COLORS.get(name, DISC_COLORS["generic"])
+def label_colors(names, p=TEXTURE_PRESET):
+    """Disc label colour per track: in-game discs keep theirs, the others get evenly spread rainbow hues."""
+    others = [n for n in names if n not in DISC_COLORS or n == "generic"]
+    colors, i = [], 0
+    for name in names:
+        if name in DISC_COLORS and name != "generic":
+            colors.append(DISC_COLORS[name])
+        else:
+            rgb = colorsys.hsv_to_rgb(i / len(others), p["label_saturation"], p["label_value"])
+            colors.append(tuple(round(c * 255) for c in rgb))
+            i += 1
+    return colors
+
+
+def disc(label, scale):
+    """Music disc item icon with the given label colour, scaled with nearest-neighbour."""
     tex = pygame.Surface((16, 16), pygame.SRCALPHA)
     for y in range(16):
         for x in range(16):
@@ -132,6 +165,106 @@ def disc(name, scale):
                 color = tuple(min(255, c + 25) for c in color)
             tex.set_at((x, y), color + (255,))
     return pygame.transform.scale(tex, (16 * scale, 16 * scale))
+
+
+def chest_side(p=TEXTURE_PRESET):
+    """16x16 chest side: planks, dark rim, seam between lid and body."""
+    rng = random.Random(p["seed"] + 1)
+    tex = pygame.Surface((16, 16))
+    for y in range(16):
+        for x in range(16):
+            if x in (0, 15) or y in (0, 15, 5):
+                color = p["chest_border"]
+            elif y % 4 == 3:
+                color = p["chest_wood_dark"]
+            else:
+                color = p["chest_wood"]
+            tex.set_at((x, y), _vary(color, rng))
+    return tex
+
+
+def chest_top(p=TEXTURE_PRESET):
+    tex = chest_side(p)
+    for x in range(1, 15):
+        tex.set_at((x, 5), tex.get_at((x, 4)))
+    return tex
+
+
+def chest_front(p=TEXTURE_PRESET):
+    """Side with the latch across the seam."""
+    tex = chest_side(p)
+    for y in range(3, 9):
+        for x in range(6, 10):
+            rim = x in (6, 9) or y in (3, 8)
+            tex.set_at((x, y), p["chest_latch_rim"] if rim else p["chest_latch"])
+    return tex
+
+
+def chest_panel(w, h, p=TEXTURE_PRESET):
+    """GUI background in texels: rounded black outline, 2-texel bevel, light grey body."""
+    tex = pygame.Surface((w, h), pygame.SRCALPHA)
+    for y in range(h):
+        for x in range(w):
+            cx, cy = min(x, w - 1 - x), min(y, h - 1 - y)
+            if cx + cy < 2:
+                continue
+            if cx == 0 or cy == 0 or (cx, cy) == (1, 1):
+                color = p["ui_outline"]
+            else:
+                top_left = x <= 2 or y <= 2
+                bottom_right = x >= w - 3 or y >= h - 3
+                if top_left and not bottom_right:
+                    color = p["ui_light"]
+                elif bottom_right and not top_left:
+                    color = p["ui_dark"]
+                else:
+                    color = p["ui_body"]
+            tex.set_at((x, y), color)
+    return tex
+
+
+def draw_slot(tex, x, y, p=TEXTURE_PRESET):
+    """18x18 inventory slot (texels): dark top-left, white bottom-right."""
+    tex.fill(p["slot_body"], (x, y, 18, 18))
+    tex.fill(p["slot_shadow"], (x, y, 17, 1))
+    tex.fill(p["slot_shadow"], (x, y, 1, 17))
+    tex.fill(p["ui_light"], (x + 1, y + 17, 17, 1))
+    tex.fill(p["ui_light"], (x + 17, y + 1, 1, 17))
+
+
+def draw_button(tex, rect, p=TEXTURE_PRESET):
+    x, y, w, h = rect
+    tex.fill(p["ui_outline"], rect)
+    tex.fill(p["button_light"], (x + 1, y + 1, w - 2, h - 2))
+    tex.fill(p["button_dark"], (x + 2, y + 2, w - 3, h - 3))
+    tex.fill(p["button_body"], (x + 2, y + 2, w - 4, h - 4))
+
+
+ARROW_PATTERN = [
+    "...OOOOO...",
+    "...OFFFO...",
+    "...OFFFO...",
+    "...OFFFO...",
+    "...OFFFO...",
+    "...OFFFO...",
+    "OOOOFFFOOOO",
+    "OFFFFFFFFFO",
+    ".OFFFFFFFO.",
+    "..OFFFFFO..",
+    "...OFFFO...",
+    "....OFO....",
+    ".....O.....",
+]
+
+
+def arrow(scale, p=TEXTURE_PRESET):
+    """Big down-pointing indicator arrow: cream fill, dark outline."""
+    tex = pygame.Surface((len(ARROW_PATTERN[0]), len(ARROW_PATTERN)), pygame.SRCALPHA)
+    for y, row in enumerate(ARROW_PATTERN):
+        for x, ch in enumerate(row):
+            if ch != ".":
+                tex.set_at((x, y), p["arrow_outline"] if ch == "O" else p["arrow_fill"])
+    return pygame.transform.scale(tex, (tex.get_width() * scale, tex.get_height() * scale))
 
 
 def note(color, scale):
