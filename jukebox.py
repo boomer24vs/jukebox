@@ -24,8 +24,12 @@ PRESET = {
     "disc_rise": 95,                  # pixels above the slot
     "disc_rise_time": 0.6,
     "disc_bob": 3,
-    "note_scale": 3,
-    "note_interval": 0.6,             # seconds between two notes while playing
+    "volume_default": 0.7,
+    "volume_step": 0.1,               # per mouse wheel notch
+    "note_scale_min": 2,              # note size at the lowest volume (integer: crisp pixels)
+    "note_scale_max": 4,              # note size at full volume
+    "note_interval_max": 1.0,         # seconds between two notes at the lowest volume
+    "note_interval_min": 0.3,         # seconds between two notes at full volume
     "note_life": 1.4,
     "note_rise": 70,
     "font_size": 16,
@@ -55,6 +59,8 @@ def argb_visual_id():
 
 # Wayland does not let a window choose its position or stay on top: go through XWayland.
 os.environ.setdefault("SDL_VIDEODRIVER", "x11")
+# SDL's default OpenGL-backed window surface drops alpha: use the plain X11 framebuffer instead.
+os.environ.setdefault("SDL_FRAMEBUFFER_ACCELERATION", "0")
 VISUAL_ID = argb_visual_id() if PRESET["transparent"] else None
 if VISUAL_ID is not None:
     os.environ["SDL_VIDEO_X11_VISUALID"] = hex(VISUAL_ID)
@@ -119,11 +125,20 @@ def draw_disc(frame, disc, slot, progress, now, p):
     frame.set_clip(None)
 
 
-def spawn_note(geometry, cube_pos, p):
+def note_settings(volume, p):
+    """Louder means bigger and more frequent notes. Returns (scale, interval), interval None when muted."""
+    if volume <= 0:
+        return p["note_scale_min"], None
+    scale = round(p["note_scale_min"] + (p["note_scale_max"] - p["note_scale_min"]) * volume)
+    interval = p["note_interval_max"] - (p["note_interval_max"] - p["note_interval_min"]) * volume
+    return scale, interval
+
+
+def spawn_note(geometry, cube_pos, scale):
     sx, sy = geometry["slot_center"]
     color = textures.note_color(random.randint(0, 24))
     return {
-        "sprite": textures.note(color, p["note_scale"]),
+        "sprite": textures.note(color, scale),
         "x": cube_pos[0] + sx + random.uniform(-70, 70),
         "y": cube_pos[1] + sy + random.uniform(-20, 10),
         "drift": random.uniform(-12, 12),
@@ -169,7 +184,8 @@ def main(p=PRESET):
     cube_pos = ((p["window_size"][0] - cube.get_width()) // 2, p["cube_top_y"])
     slot = (cube_pos[0] + geometry["slot_center"][0], cube_pos[1] + geometry["slot_center"][1])
     font = pygame.font.Font(PROJECT_DIR / "fonts/Minecraftia-Regular.ttf", p["font_size"])
-    jukebox = player.Player(player.load_tracks(PROJECT_DIR / "sounds", PROJECT_DIR / "tracks.yaml"))
+    jukebox = player.Player(player.load_tracks(PROJECT_DIR / "sounds", PROJECT_DIR / "tracks.yaml"),
+                            p["volume_default"])
 
     disc_sprite, disc_progress = None, 0.0
     message, message_age = "", math.inf
@@ -210,6 +226,8 @@ def main(p=PRESET):
                     message, message_age = f"Now Playing: C418 - {track['title']}", 0.0
                     click_t = 0.0
                 press_pos, dragging = None, False
+            elif event.type == pygame.MOUSEWHEEL and on_cube(pygame.mouse.get_pos()):
+                jukebox.set_volume(jukebox.volume + event.y * p["volume_step"])
             elif event.type == pygame.WINDOWLEAVE:
                 hover = False
             elif event.type == player.TRACK_END and jukebox.on_track_end():
@@ -220,11 +238,12 @@ def main(p=PRESET):
         disc_progress = min(1.0, disc_progress + step) if playing else max(0.0, disc_progress - step)
         click_t += dt
         message_age += dt
-        if playing:
+        note_scale, note_interval = note_settings(jukebox.volume, p)
+        if playing and note_interval:
             note_timer += dt
-            if note_timer >= p["note_interval"]:
+            if note_timer >= note_interval:
                 note_timer = 0.0
-                notes.append(spawn_note(geometry, cube_pos, p))
+                notes.append(spawn_note(geometry, cube_pos, note_scale))
 
         frame = pygame.Surface(p["window_size"], pygame.SRCALPHA)
         draw_cube(frame, cube, cube_pos, click_t, p)
