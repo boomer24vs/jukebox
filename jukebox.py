@@ -40,14 +40,23 @@ PRESET = {
     "text_saturation": 0.7,
     "text_value": 1.0,                # 0.6 in game, brighter here to read on any wallpaper
     "drag_threshold": 4,
+    "drag_fps": 120,                  # window position updates per second while dragging
 }
 
 
-def argb_visual_id():
+def x_display():
+    try:
+        from Xlib import display
+        return display.Display()
+    except Exception:
+        return None
+
+
+def argb_visual_id(xdisplay):
     """Id of a 32-bit TrueColor X visual (needed for a transparent window), or None."""
     try:
-        from Xlib import X, display
-        for depth in display.Display().screen().allowed_depths:
+        from Xlib import X
+        for depth in xdisplay.screen().allowed_depths:
             if depth.depth == 32:
                 for visual in depth.visuals:
                     if visual.visual_class == X.TrueColor:
@@ -61,7 +70,8 @@ def argb_visual_id():
 os.environ.setdefault("SDL_VIDEODRIVER", "x11")
 # SDL's default OpenGL-backed window surface drops alpha: use the plain X11 framebuffer instead.
 os.environ.setdefault("SDL_FRAMEBUFFER_ACCELERATION", "0")
-VISUAL_ID = argb_visual_id() if PRESET["transparent"] else None
+XDISPLAY = x_display()
+VISUAL_ID = argb_visual_id(XDISPLAY) if PRESET["transparent"] and XDISPLAY else None
 if VISUAL_ID is not None:
     os.environ["SDL_VIDEO_X11_VISUALID"] = hex(VISUAL_ID)
 
@@ -92,6 +102,42 @@ def present(window, screen, frame, transparent):
         screen.fill(PRESET["fallback_background"])
         screen.blit(frame, (0, 0))
     window.flip()
+
+
+def pointer_on_screen():
+    """Absolute pointer position: event.pos is relative to the window, which moves while dragging."""
+    if XDISPLAY is None:
+        return pygame.mouse.get_pos()
+    pointer = XDISPLAY.screen().root.query_pointer()
+    return pointer.root_x, pointer.root_y
+
+
+def drag_target(start_window, start_pointer, pointer):
+    return (start_window[0] + pointer[0] - start_pointer[0], start_window[1] + pointer[1] - start_pointer[1])
+
+
+def find_x_window():
+    """Our X11 top-level window, found by process id among the windows GNOME manages."""
+    if XDISPLAY is None:
+        return None
+    root = XDISPLAY.screen().root
+    clients = root.get_full_property(XDISPLAY.intern_atom("_NET_CLIENT_LIST"), 0)
+    pid_atom = XDISPLAY.intern_atom("_NET_WM_PID")
+    for window_id in clients.value if clients else []:
+        candidate = XDISPLAY.create_resource_object("window", window_id)
+        pid = candidate.get_full_property(pid_atom, 0)
+        if pid and pid.value[0] == os.getpid():
+            return candidate
+    return None
+
+
+def move_window(window, x_window, pos):
+    """Asynchronous X11 move: SDL's own setter waits ~10 ms (up to 100 ms at a screen edge) for GNOME to confirm."""
+    if x_window is None:
+        window.position = pos
+        return
+    x_window.configure(x=pos[0], y=pos[1])
+    XDISPLAY.flush()
 
 
 def draw_hover(frame, geometry, offset, p):
@@ -192,6 +238,7 @@ def main(p=PRESET):
     notes, note_timer = [], 0.0
     click_t = math.inf
     press_pos, dragging, hover = None, False, False
+    drag_start, drag_last, x_window = None, None, None
     now = 0.0
 
     def on_cube(pos):
@@ -200,7 +247,7 @@ def main(p=PRESET):
 
     running = True
     while running:
-        dt = clock.tick(p["fps"]) / 1000
+        dt = clock.tick(p["drag_fps"] if dragging else p["fps"]) / 1000
         now += dt
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -211,14 +258,13 @@ def main(p=PRESET):
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and on_cube(event.pos):
                 press_pos, dragging = event.pos, False
+                drag_start = (window.position, pointer_on_screen())
+                drag_last = window.position
+                x_window = x_window or find_x_window()
             elif event.type == pygame.MOUSEMOTION:
                 hover = on_cube(event.pos)
-                if press_pos:
-                    dx, dy = event.pos[0] - press_pos[0], event.pos[1] - press_pos[1]
-                    if dragging or math.hypot(dx, dy) > p["drag_threshold"]:
-                        dragging = True
-                        wx, wy = window.position
-                        window.position = (wx + dx, wy + dy)
+                if press_pos and not dragging:
+                    dragging = math.hypot(event.pos[0] - press_pos[0], event.pos[1] - press_pos[1]) > p["drag_threshold"]
             elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
                 if press_pos and not dragging:
                     track = jukebox.play_random()
@@ -232,6 +278,14 @@ def main(p=PRESET):
                 hover = False
             elif event.type == player.TRACK_END and jukebox.on_track_end():
                 notes.clear()
+
+        if dragging:
+            # One move per frame, computed from screen coordinates: no feedback loop with the window position.
+            # Past a screen edge GNOME keeps the window inside on its own.
+            target = drag_target(*drag_start, pointer_on_screen())
+            if target != drag_last:
+                move_window(window, x_window, target)
+                drag_last = target
 
         playing = jukebox.current is not None
         step = dt / p["disc_rise_time"]
