@@ -65,9 +65,31 @@ PRESET = {
 }
 
 
+FAMILY_WILD = 65535
+
+
+def accept_wildcard_auth():
+    """Let python-xlib use the "any host" cookie mutter writes for XWayland, as libX11 does.
+    Without it the connection fails once the hostname changes (new IPv6 lease) and the window turns opaque."""
+    from Xlib import error, xauth
+    original = xauth.Xauthority.get_best_auth
+
+    def get_best_auth(self, family, address, dispno, types=(b"MIT-MAGIC-COOKIE-1",)):
+        try:
+            return original(self, family, address, dispno, types)
+        except error.XNoAuthError:
+            for efam, _, enum, ename, edata in self.entries:
+                if efam == FAMILY_WILD and enum in (b"", str(dispno).encode()) and ename in types:
+                    return ename, edata
+            raise
+
+    xauth.Xauthority.get_best_auth = get_best_auth
+
+
 def x_display():
     try:
         from Xlib import display
+        accept_wildcard_auth()
         return display.Display()
     except Exception:
         return None
