@@ -29,13 +29,20 @@ def load_tracks(sounds_dir, tracks_file):
 
 
 class Player:
-    def __init__(self, tracks):
+    def __init__(self, tracks, volume=1.0):
         if not tracks:
             raise SystemExit("No audio file in sounds/: run extract_music.py first.")
         self.tracks = tracks
         self.current = None
         self.previous = None
+        self.volume = 0.0
+        self.set_volume(volume)
         pygame.mixer.music.set_endevent(TRACK_END)
+
+    def set_volume(self, volume):
+        """Volume 0..1, kept from one track to the next."""
+        self.volume = round(min(1.0, max(0.0, volume)), 2)
+        pygame.mixer.music.set_volume(self.volume)
 
     def play_random(self):
         """Stop the current track and start a random one, never the one just played."""
@@ -45,6 +52,7 @@ class Player:
         self.previous = last
         self.current = random.choice(choices)
         pygame.mixer.music.load(self.current["path"])
+        pygame.mixer.music.set_volume(self.volume)
         pygame.mixer.music.play()
         return self.current
 
