@@ -25,6 +25,7 @@ PRESET = {
     "disc_rise": 95,                  # pixels above the slot
     "disc_rise_time": 0.6,
     "disc_bob": 3,
+    "autoplay": True,                 # a new random track starts when one ends
     "volume_default": 0.7,
     "volume_step": 0.1,               # per mouse wheel notch
     "note_scale_min": 2,              # note size at the lowest volume (integer: crisp pixels)
@@ -395,8 +396,13 @@ def main(p=PRESET):
                 running = False
             elif event.type == player.TRACK_END:
                 if jukebox.on_track_end():
-                    notes.clear()
-                    compact_notes.clear()
+                    if p["autoplay"]:
+                        track = jukebox.play_random()
+                        disc_sprite, disc_progress = textures.disc(track["disc"], p["disc_scale"]), 0.0
+                        message, message_age = f"Now Playing: C418 - {track['title']}", 0.0
+                    else:
+                        notes.clear()
+                        compact_notes.clear()
             elif event.type == pygame.MOUSEMOTION and (compact_shown or compact_target):
                 # Cursor back on the jukebox. Changing the clickable area under a still cursor also sends
                 # a motion event: ignore it.
