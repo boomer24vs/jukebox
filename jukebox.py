@@ -351,7 +351,11 @@ def main(p=PRESET):
     small_cube_pos = (compact_rect.x + p["compact_cube_pos"][0], compact_rect.y + p["compact_cube_pos"][1])
     compact_slot = (small_cube_pos[0] + small_geometry["slot_center"][0],
                     small_cube_pos[1] + small_geometry["slot_center"][1])
-    font = pygame.font.Font(PROJECT_DIR / "fonts/Minecraftia-Regular.ttf", p["font_size"])
+    font_path = PROJECT_DIR / "fonts/Minecraftia-Regular.ttf"
+    if not font_path.exists():
+        raise SystemExit(f"Font missing: download Minecraftia from https://www.dafont.com/minecraftia.font "
+                         f"and put Minecraftia-Regular.ttf in {font_path.parent}/")
+    font = pygame.font.Font(font_path, p["font_size"])
     jukebox = player.Player(player.load_tracks(PROJECT_DIR / "sounds", PROJECT_DIR / "tracks.yaml"),
                             p["volume_default"])
 
