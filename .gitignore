@@ -5,3 +5,8 @@ sounds/*
 !sounds/.gitkeep
 # Minecraftia font (Andrew Tyler, dafont): download it locally
 fonts/*.ttf
+# Internal design notes, kept local
+CLAUDE.md
+style/
+audio/
+fonction new/

@@ -1,4 +1,4 @@
-"""Audio handling (see audio/audio.md): random track, no immediate repeat, end-of-track event."""
+"""Audio handling: random track, no immediate repeat, end-of-track event."""
 
 import random
 from pathlib import Path
