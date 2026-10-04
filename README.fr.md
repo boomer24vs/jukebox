@@ -25,6 +25,8 @@ Un clic, un disque sort du jukebox et *Now Playing: C418 - cat* apparaît, comme
 
 - 🎵 **44 morceaux de C418** : les 12 disques et les musiques de fond, récupérés depuis *ta propre* installation de Minecraft.
 - 💿 **Fidèle au jeu** : le disque sort de la fente, le message *Now Playing* est écrit avec la police de Minecraft et passe par les couleurs de l'arc-en-ciel, et des notes de musique s'échappent pendant la lecture.
+- 📦 **Coffre à disques** : clique sur le petit coffre à côté du jukebox pour ouvrir un coffre Minecraft rempli de disques, un par morceau, chacun de sa couleur. Passe la souris sur un disque pour voir l'infobulle du jeu, clique dessus pour lancer ce morceau.
+- 🔁 **Lecture enchaînée** : quand un morceau se termine, un autre se lance au hasard.
 - 🔊 **Volume à la molette** : molette sur le jukebox. Plus c'est fort, plus les notes sont grosses et nombreuses.
 - 🖱️ **Où tu veux** : fais-le glisser n'importe où sur le bureau.
 - 🪟 **Un vrai widget de bureau** : fond transparent, reste sous tes applications, et les clics sur les zones vides passent à travers.
@@ -35,6 +37,9 @@ Un clic, un disque sort du jukebox et *Now Playing: C418 - cat* apparaît, comme
 <tr>
 <td align="center"><img src="docs/media/normal.png" width="330" alt="Mode normal"><br><sub>Mode normal</sub></td>
 <td align="center"><img src="docs/media/compact.png" width="330" alt="Mode compact"><br><sub>Mode compact</sub></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><img src="docs/media/chest.png" width="660" alt="Coffre à disques ouvert"><br><sub>Coffre à disques</sub></td>
 </tr>
 </table>
 
@@ -70,9 +75,12 @@ Lance **Jukebox** depuis le menu des applications, ou `.venv/bin/python jukebox.
 | Action | Effet |
 |---|---|
 | Clic gauche sur le jukebox | Joue un morceau au hasard (un autre clic change de morceau) |
+| Clic gauche sur le petit coffre | Ouvre / ferme le coffre à disques |
+| Clic gauche sur un disque du coffre | Joue ce morceau et ferme le coffre |
 | Molette sur le jukebox | Volume, par pas de 10 % |
 | Glisser | Déplace le jukebox |
-| Clic droit sur le jukebox, ou `Échap` | Quitte |
+| `Échap` | Ferme le coffre s'il est ouvert, sinon quitte |
+| Clic droit sur le jukebox | Quitte |
 | 10 s sans interaction | Mode compact ; passe la souris dessus pour revenir au mode normal |
 
 ## Réglages
@@ -83,6 +91,7 @@ Tout se règle dans le dictionnaire `PRESET` en haut de [`jukebox.py`](jukebox.p
 "window_layer": "below",      # "below" (sous tes applis), "normal" ou "top" (toujours au premier plan)
 "window_top_margin": 40,      # distance de départ depuis le haut de l'écran
 "volume_default": 0.7,
+"autoplay": True,             # un nouveau morceau au hasard se lance quand un autre se termine
 "compact_delay": 10.0,        # secondes avant le mode compact
 "compact_transition": 0.8,
 ```
@@ -111,8 +120,8 @@ rm -rf /chemin/vers/jukebox
 | Fichier | Rôle |
 |---|---|
 | `jukebox.py` | Fenêtre, boucle principale, animations, réglages (`PRESET`) |
-| `textures.py` | Pixel art généré par le code : jukebox, disques, notes |
-| `player.py` | Audio : morceau au hasard, volume, progression |
+| `textures.py` | Pixel art généré par le code : jukebox, disques, notes, coffre et son interface |
+| `player.py` | Audio : morceau au hasard ou choisi, volume, progression |
 | `extract_music.py` | Copie la musique de C418 depuis ton installation de Minecraft |
 | `install.sh` | Installation en une commande |
 

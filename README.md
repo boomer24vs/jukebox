@@ -25,6 +25,8 @@ Click it, a disc rises out of the jukebox and *Now Playing: C418 - cat* fades in
 
 - 🎵 **44 C418 tracks**: the 12 music discs and the background music, taken from *your own* Minecraft install.
 - 💿 **Faithful to the game**: the disc rises out of the slot, the *Now Playing* message uses the Minecraft font and fades through the rainbow, and music notes pop out while it plays.
+- 📦 **Disc chest**: click the small chest next to the jukebox to open a Minecraft chest full of music discs, one per track, each with its own colour. Hover a disc for the in-game tooltip, click it to play that track.
+- 🔁 **Autoplay**: when a track ends, another random one starts.
 - 🔊 **Volume with the mouse wheel**: scroll over the jukebox. The notes get bigger and more frequent as it gets louder.
 - 🖱️ **Put it anywhere**: drag it around the desktop.
 - 🪟 **A real desktop widget**: transparent background, stays under your apps, and clicks on empty areas go through it.
@@ -35,6 +37,9 @@ Click it, a disc rises out of the jukebox and *Now Playing: C418 - cat* fades in
 <tr>
 <td align="center"><img src="docs/media/normal.png" width="330" alt="Normal mode"><br><sub>Normal mode</sub></td>
 <td align="center"><img src="docs/media/compact.png" width="330" alt="Compact mode"><br><sub>Compact mode</sub></td>
+</tr>
+<tr>
+<td align="center" colspan="2"><img src="docs/media/chest.png" width="660" alt="Disc chest open"><br><sub>Disc chest</sub></td>
 </tr>
 </table>
 
@@ -70,9 +75,12 @@ Launch **Jukebox** from your application menu, or run `.venv/bin/python jukebox.
 | Action | Effect |
 |---|---|
 | Left click on the jukebox | Plays a random track (another click switches track) |
+| Left click on the small chest | Opens / closes the disc chest |
+| Left click on a disc in the chest | Plays that track and closes the chest |
 | Mouse wheel on the jukebox | Volume, by steps of 10% |
 | Drag | Moves the jukebox |
-| Right click on the jukebox, or `Esc` | Quits |
+| `Esc` | Closes the chest if it is open, otherwise quits |
+| Right click on the jukebox | Quits |
 | 10 s without interaction | Compact mode; hover it to bring back the normal mode |
 
 ## Settings
@@ -83,6 +91,7 @@ Everything is tuned in the `PRESET` dictionary at the top of [`jukebox.py`](juke
 "window_layer": "below",      # "below" (under your apps), "normal" or "top" (always on top)
 "window_top_margin": 40,      # starting distance from the top of the screen
 "volume_default": 0.7,
+"autoplay": True,             # a new random track starts when one ends
 "compact_delay": 10.0,        # seconds before compact mode
 "compact_transition": 0.8,
 ```
@@ -111,8 +120,8 @@ rm -rf /path/to/jukebox
 | File | Role |
 |---|---|
 | `jukebox.py` | Window, main loop, animations, settings (`PRESET`) |
-| `textures.py` | Procedural pixel art: jukebox, discs, notes |
-| `player.py` | Audio: random track, volume, progress |
+| `textures.py` | Procedural pixel art: jukebox, discs, notes, chest and its GUI |
+| `player.py` | Audio: random or chosen track, volume, progress |
 | `extract_music.py` | Copies the C418 music from your Minecraft install |
 | `install.sh` | One-step install |
 
