@@ -10,6 +10,22 @@ AUDIO_EXTENSIONS = {".mp3", ".ogg", ".wav"}
 TRACK_END = pygame.USEREVENT + 1
 
 
+def ogg_duration(path):
+    """Length in seconds from the Ogg Vorbis headers (sample rate + last granule position), None if unknown."""
+    if path.suffix.lower() != ".ogg":
+        return None
+    with open(path, "rb") as f:
+        head = f.read(4096)
+        f.seek(max(0, path.stat().st_size - 65536))
+        tail = f.read()
+    ident, last_page = head.find(b"\x01vorbis"), tail.rfind(b"OggS")
+    if ident < 0 or last_page < 0:
+        return None
+    rate = int.from_bytes(head[ident + 12:ident + 16], "little")
+    granule = int.from_bytes(tail[last_page + 6:last_page + 14], "little")
+    return granule / rate if rate else None
+
+
 def load_tracks(sounds_dir, tracks_file):
     """Scan sounds_dir; titles and discs come from tracks.yaml when listed there."""
     meta = {}
@@ -24,6 +40,7 @@ def load_tracks(sounds_dir, tracks_file):
                 "path": path,
                 "title": entry.get("title", path.stem),
                 "disc": entry.get("disc", "generic"),
+                "duration": ogg_duration(path),
             })
     return tracks
 
@@ -55,6 +72,12 @@ class Player:
         pygame.mixer.music.set_volume(self.volume)
         pygame.mixer.music.play()
         return self.current
+
+    def progress(self):
+        """Share of the current track already played (0..1), None when idle or length unknown."""
+        if self.current is None or not self.current["duration"]:
+            return None
+        return min(1.0, max(0.0, pygame.mixer.music.get_pos() / 1000 / self.current["duration"]))
 
     def on_track_end(self):
         """Natural end of the track: back to idle. Returns False for the event sent by a manual stop."""

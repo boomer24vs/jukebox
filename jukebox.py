@@ -32,6 +32,7 @@ PRESET = {
     "note_interval_max": 1.0,         # seconds between two notes at the lowest volume
     "note_interval_min": 0.3,         # seconds between two notes at full volume
     "note_life": 1.4,
+    "note_spread": 70,                # horizontal spawn range around the slot
     "note_rise": 70,
     "font_size": 16,
     "text_y": 368,
@@ -42,6 +43,24 @@ PRESET = {
     "text_value": 1.0,                # 0.6 in game, brighter here to read on any wallpaper
     "drag_threshold": 4,
     "drag_fps": 120,                  # window position updates per second while dragging
+    "compact_delay": 10.0,            # seconds without hover or click before the compact mode
+    "compact_transition": 0.8,
+    "compact_size": (360, 120),       # compact layout; below the note headroom it is the clickable area
+    "compact_origin": (20, 80),       # top-left of the compact layout inside the window
+    "compact_cube_scale": 2,
+    "compact_cube_pos": (8, 48),      # inside the compact window, room above for the notes
+    "compact_text_pos": (84, 64),     # left edge, vertical centre
+    "compact_note_scale_div": 2,      # compact notes are this many times smaller
+    "compact_note_spread": 24,        # horizontal spawn range around the slot
+    "compact_note_rise": 40,
+    "compact_text_color": (255, 255, 255),
+    "compact_text_shadow": (63, 63, 63),
+    "xp_bar_rect": (84, 86, 264, 5),  # x, y, width, height in texels of xp_bar_scale
+    "xp_bar_scale": 2,
+    "xp_bar_border": (0, 0, 0),
+    "xp_bar_empty": (48, 48, 48),
+    "xp_bar_fill": (128, 255, 32),
+    "xp_bar_fill_shade": (76, 168, 18),
 }
 
 
@@ -84,6 +103,14 @@ import textures  # noqa: E402
 
 def ease_out(t):
     return 1 - (1 - t) ** 3
+
+
+def ease_in_out(t):
+    return t * t * (3 - 2 * t)
+
+
+def lerp(a, b, t):
+    return a + (b - a) * t
 
 
 def open_window(p):
@@ -142,6 +169,32 @@ def wait_for_x_window(timeout=1.0):
             return x_window
         time.sleep(0.02)
     return None
+
+
+def mask_rects(mask, offset):
+    """Opaque pixels of a mask as one rectangle per horizontal run, shifted by offset."""
+    rects = []
+    w, h = mask.get_size()
+    for y in range(h):
+        x = 0
+        while x < w:
+            if mask.get_at((x, y)):
+                start = x
+                while x < w and mask.get_at((x, y)):
+                    x += 1
+                rects.append((offset[0] + start, offset[1] + y, x - start, 1))
+            x += 1
+    return rects
+
+
+def set_input_region(x_window, rects):
+    """Only these rectangles catch the mouse: clicks on the transparent parts go through to what is below."""
+    if x_window is None:
+        return
+    from Xlib import X
+    from Xlib.ext import shape
+    x_window.shape_rectangles(shape.SO.Set, shape.SK.Input, X.Unsorted, 0, 0, rects)
+    XDISPLAY.flush()
 
 
 def keep_below(x_window):
@@ -204,14 +257,14 @@ def note_settings(volume, p):
     return scale, interval
 
 
-def spawn_note(geometry, cube_pos, scale):
-    sx, sy = geometry["slot_center"]
+def spawn_note(slot, spread, scale, rise):
     color = textures.note_color(random.randint(0, 24))
     return {
         "sprite": textures.note(color, scale),
-        "x": cube_pos[0] + sx + random.uniform(-70, 70),
-        "y": cube_pos[1] + sy + random.uniform(-20, 10),
-        "drift": random.uniform(-12, 12),
+        "x": slot[0] + random.uniform(-spread, spread),
+        "y": slot[1] + random.uniform(-0.3, 0.15) * spread,
+        "drift": random.uniform(-0.17, 0.17) * spread,
+        "rise": rise,
         "age": 0.0,
     }
 
@@ -223,8 +276,46 @@ def draw_notes(frame, notes, dt, p):
         sprite = n["sprite"]
         sprite.set_alpha(int(255 * min(1, (1 - t) * 3)))
         frame.blit(sprite, (n["x"] + n["drift"] * t - sprite.get_width() / 2,
-                            n["y"] - p["note_rise"] * ease_out(t)))
+                            n["y"] - n["rise"] * ease_out(t)))
     notes[:] = [n for n in notes if n["age"] < p["note_life"]]
+
+
+def draw_moving_cube(frame, cubes, big_pos, small_pos, k):
+    """Cube on its way between the normal (k=0) and compact (k=1) layouts.
+    cubes: one native cube per pixel scale, from the biggest to the smallest; the closest one is resized
+    (nearest-neighbour) so the pixel art stays sharp and there is no jump at either end."""
+    big, small = cubes[0], cubes[-1]
+    w = lerp(big.get_width(), small.get_width(), k)
+    h = lerp(big.get_height(), small.get_height(), k)
+    source = min(cubes, key=lambda c: abs(c.get_width() - w))
+    if source.get_size() != (round(w), round(h)):
+        source = pygame.transform.scale(source, (round(w), round(h)))
+    frame.blit(source, (round(lerp(big_pos[0], small_pos[0], k)), round(lerp(big_pos[1], small_pos[1], k))))
+
+
+def draw_xp_bar(frame, origin, progress, p):
+    """Experience-bar look: black border, dark empty part, green fill with a darker bottom row."""
+    x, y, w, h = p["xp_bar_rect"]
+    s = p["xp_bar_scale"]
+    left, top = origin[0] + x, origin[1] + y
+    frame.fill(p["xp_bar_border"], (left, top, w, h * s))
+    inner = pygame.Rect(left + s, top + s, w - 2 * s, (h - 2) * s)
+    frame.fill(p["xp_bar_empty"], inner)
+    filled = round(inner.width * progress)
+    if filled:
+        frame.fill(p["xp_bar_fill"], (inner.x, inner.y, filled, inner.height))
+        frame.fill(p["xp_bar_fill_shade"], (inner.x, inner.bottom - s, filled, s))
+
+
+def draw_compact_info(frame, font, title, progress, origin, p):
+    """Compact mode: title in white with the in-game drop shadow, progress bar below."""
+    unit = max(1, p["font_size"] // 8)
+    x, y = origin[0] + p["compact_text_pos"][0], origin[1] + p["compact_text_pos"][1]
+    for col, off in ((p["compact_text_shadow"], unit), (p["compact_text_color"], 0)):
+        img = font.render(title, False, col)
+        frame.blit(img, (x + off, y - img.get_height() / 2 + off))
+    if progress is not None:
+        draw_xp_bar(frame, origin, progress, p)
 
 
 def draw_now_playing(frame, font, text, age, p):
@@ -253,13 +344,20 @@ def main(p=PRESET):
     cube_mask = pygame.mask.from_surface(cube)
     cube_pos = ((p["window_size"][0] - cube.get_width()) // 2, p["cube_top_y"])
     slot = (cube_pos[0] + geometry["slot_center"][0], cube_pos[1] + geometry["slot_center"][1])
+    cubes = [textures.iso_cube(textures.jukebox_top(), textures.jukebox_side(), scale)[0]
+             for scale in range(p["cube_scale"], p["compact_cube_scale"] - 1, -1)]
+    _, small_geometry = textures.iso_cube(textures.jukebox_top(), textures.jukebox_side(), p["compact_cube_scale"])
+    compact_rect = pygame.Rect(p["compact_origin"], p["compact_size"])
+    small_cube_pos = (compact_rect.x + p["compact_cube_pos"][0], compact_rect.y + p["compact_cube_pos"][1])
+    compact_slot = (small_cube_pos[0] + small_geometry["slot_center"][0],
+                    small_cube_pos[1] + small_geometry["slot_center"][1])
     font = pygame.font.Font(PROJECT_DIR / "fonts/Minecraftia-Regular.ttf", p["font_size"])
     jukebox = player.Player(player.load_tracks(PROJECT_DIR / "sounds", PROJECT_DIR / "tracks.yaml"),
                             p["volume_default"])
 
     disc_sprite, disc_progress = None, 0.0
     message, message_age = "", math.inf
-    notes, note_timer = [], 0.0
+    notes, compact_notes, note_timer = [], [], 0.0
     click_t = math.inf
     press_pos, dragging, hover = None, False, False
     drag_start, drag_last = None, None
@@ -267,7 +365,13 @@ def main(p=PRESET):
     x_window = wait_for_x_window()
     if x_window is not None and p["window_layer"] == "below":
         keep_below(x_window)
+    # The window keeps its size: the compact mode is drawn inside it and only the clickable area changes.
+    normal_region = mask_rects(cube_mask, cube_pos)
+    compact_region = [(compact_rect.x, small_cube_pos[1], compact_rect.width, compact_rect.bottom - small_cube_pos[1])]
+    set_input_region(x_window, normal_region)
     now = 0.0
+    idle, compact_t, compact_target, compact_shown = 0.0, 0.0, False, False
+    pointer_at_compact = None
 
     def on_cube(pos):
         x, y = pos[0] - cube_pos[0], pos[1] - cube_pos[1]
@@ -275,7 +379,8 @@ def main(p=PRESET):
 
     running = True
     while running:
-        dt = clock.tick(p["drag_fps"] if dragging else p["fps"]) / 1000
+        # Capped so a slow frame does not make the animations jump.
+        dt = min(clock.tick(p["drag_fps"] if dragging else p["fps"]) / 1000, 1 / 30)
         now += dt
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -284,6 +389,17 @@ def main(p=PRESET):
                 running = False
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 3:
                 running = False
+            elif event.type == player.TRACK_END:
+                if jukebox.on_track_end():
+                    notes.clear()
+                    compact_notes.clear()
+            elif event.type == pygame.MOUSEMOTION and (compact_shown or compact_target):
+                # Cursor back on the jukebox. Changing the clickable area under a still cursor also sends
+                # a motion event: ignore it.
+                if not compact_shown or pointer_on_screen() != pointer_at_compact:
+                    compact_target, idle = False, 0.0
+            elif compact_t > 0:
+                continue                                # no clicks or wheel until the normal layout is back
             elif event.type == pygame.MOUSEBUTTONDOWN and event.button == 1 and on_cube(event.pos):
                 press_pos, dragging = event.pos, False
                 drag_start = (window.position, pointer_on_screen())
@@ -298,13 +414,12 @@ def main(p=PRESET):
                     disc_sprite, disc_progress = textures.disc(track["disc"], p["disc_scale"]), 0.0
                     message, message_age = f"Now Playing: C418 - {track['title']}", 0.0
                     click_t = 0.0
-                press_pos, dragging = None, False
+                press_pos, dragging, idle = None, False, 0.0
             elif event.type == pygame.MOUSEWHEEL and on_cube(pygame.mouse.get_pos()):
                 jukebox.set_volume(jukebox.volume + event.y * p["volume_step"])
+                idle = 0.0
             elif event.type == pygame.WINDOWLEAVE:
                 hover = False
-            elif event.type == player.TRACK_END and jukebox.on_track_end():
-                notes.clear()
 
         if dragging:
             # One move per frame, computed from screen coordinates: no feedback loop with the window position.
@@ -314,27 +429,71 @@ def main(p=PRESET):
                 move_window(window, x_window, target)
                 drag_last = target
 
+        if hover or press_pos:
+            idle = 0.0
+        elif not compact_target:
+            idle += dt
+            compact_target = idle >= p["compact_delay"]
+        if compact_target:
+            compact_t = min(1.0, compact_t + dt / p["compact_transition"])
+            if compact_t >= 1 and not compact_shown:
+                set_input_region(x_window, compact_region)
+                compact_shown, hover = True, False
+                pointer_at_compact = pointer_on_screen()
+                notes.clear()
+        else:
+            if compact_shown:
+                set_input_region(x_window, normal_region)
+                compact_shown = False
+                compact_notes.clear()
+            compact_t = max(0.0, compact_t - dt / p["compact_transition"])
+        k = ease_in_out(compact_t)
+
         playing = jukebox.current is not None
         step = dt / p["disc_rise_time"]
         disc_progress = min(1.0, disc_progress + step) if playing else max(0.0, disc_progress - step)
         click_t += dt
         message_age += dt
         note_scale, note_interval = note_settings(jukebox.volume, p)
-        if playing and note_interval:
+        if playing and note_interval and (compact_t == 0 or compact_shown):
             note_timer += dt
             if note_timer >= note_interval:
                 note_timer = 0.0
-                notes.append(spawn_note(geometry, cube_pos, note_scale))
+                if compact_shown:
+                    compact_notes.append(spawn_note(compact_slot, p["compact_note_spread"],
+                                                    max(1, note_scale // p["compact_note_scale_div"]),
+                                                    p["compact_note_rise"]))
+                else:
+                    notes.append(spawn_note(slot, p["note_spread"], note_scale, p["note_rise"]))
 
         frame = pygame.Surface(p["window_size"], pygame.SRCALPHA)
-        draw_cube(frame, cube, cube_pos, click_t, p)
-        if disc_sprite:
-            draw_disc(frame, disc_sprite, slot, disc_progress, now, p)
-        if hover:
-            draw_hover(frame, geometry, cube_pos, p)
-        draw_notes(frame, notes, dt, p)
-        if message:
-            draw_now_playing(frame, font, message, message_age, p)
+        if k < 1:
+            # Disc, notes and message fade out together while the cube shrinks.
+            extras = pygame.Surface(p["window_size"], pygame.SRCALPHA)
+            if disc_sprite:
+                draw_disc(extras, disc_sprite, slot, disc_progress, now, p)
+            draw_notes(extras, notes, dt, p)
+            if message:
+                draw_now_playing(extras, font, message, message_age, p)
+            extras.set_alpha(round(255 * (1 - k)))
+            if k > 0:
+                draw_moving_cube(frame, cubes, cube_pos, small_cube_pos, k)
+                frame.blit(extras, (0, 0))
+            else:
+                draw_cube(frame, cube, cube_pos, click_t, p)
+                frame.blit(extras, (0, 0))
+                if hover:
+                    draw_hover(frame, geometry, cube_pos, p)
+        else:
+            draw_moving_cube(frame, cubes, cube_pos, small_cube_pos, k)
+        if k > 0:
+            info = pygame.Surface(p["window_size"], pygame.SRCALPHA)
+            draw_notes(info, compact_notes, dt, p)
+            if playing:
+                draw_compact_info(info, font, f"C418 - {jukebox.current['title']}", jukebox.progress(),
+                                  compact_rect.topleft, p)
+            info.set_alpha(round(255 * k))
+            frame.blit(info, (0, 0))
         present(window, screen, frame, transparent)
 
     pygame.quit()
