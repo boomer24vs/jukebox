@@ -2,9 +2,16 @@
 
 import json
 import shutil
+import sys
 from pathlib import Path
 
-MINECRAFT_DIR = Path.home() / ".var/app/com.mojang.Minecraft/.minecraft"
+# Where launchers keep the game assets (indexes/ + objects/). A path given on the command line wins.
+ASSETS_DIRS = [
+    Path.home() / ".minecraft/assets",
+    Path.home() / ".var/app/com.mojang.Minecraft/.minecraft/assets",
+    Path.home() / ".local/share/PrismLauncher/assets",
+    Path.home() / ".var/app/org.prismlauncher.PrismLauncher/data/PrismLauncher/assets",
+]
 PROJECT_DIR = Path(__file__).parent
 SOUNDS_DIR = PROJECT_DIR / "sounds"
 TRACKS_FILE = PROJECT_DIR / "tracks.yaml"
@@ -36,30 +43,39 @@ BACKGROUND = {
 }
 
 
-def latest_index():
-    indexes = sorted((MINECRAFT_DIR / "assets/indexes").glob("*.json"), key=lambda p: p.stat().st_mtime)
-    if not indexes:
-        raise SystemExit("No asset index found: launch Minecraft Java once from the launcher.")
+def find_assets_dir():
+    candidates = [Path(sys.argv[1]).expanduser()] if len(sys.argv) > 1 else ASSETS_DIRS
+    for path in candidates:
+        if any((path / "indexes").glob("*.json")):
+            return path
+    raise SystemExit("No Minecraft assets found: launch Minecraft Java once from the launcher, "
+                     "or pass the assets folder: python extract_music.py /path/to/assets")
+
+
+def latest_index(assets_dir):
+    indexes = sorted((assets_dir / "indexes").glob("*.json"), key=lambda p: p.stat().st_mtime)
     return json.loads(indexes[-1].read_text())["objects"]
 
 
-def copy_asset(objects, asset_key, dest_name):
+def copy_asset(assets_dir, objects, asset_key, dest_name):
     asset_hash = objects[asset_key]["hash"]
-    src = MINECRAFT_DIR / "assets/objects" / asset_hash[:2] / asset_hash
+    src = assets_dir / "objects" / asset_hash[:2] / asset_hash
     dest = SOUNDS_DIR / f"{dest_name}.ogg"
     shutil.copyfile(src, dest)
     return dest.name
 
 
 def main():
-    objects = latest_index()
+    assets_dir = find_assets_dir()
+    print(f"Minecraft assets: {assets_dir}")
+    objects = latest_index(assets_dir)
     SOUNDS_DIR.mkdir(exist_ok=True)
     entries = []
     for name, title in DISCS.items():
-        file = copy_asset(objects, f"minecraft/sounds/records/{name}.ogg", name)
+        file = copy_asset(assets_dir, objects, f"minecraft/sounds/records/{name}.ogg", name)
         entries.append((title, file, name))
     for path, title in BACKGROUND.items():
-        file = copy_asset(objects, f"minecraft/sounds/music/{path}.ogg", path.rsplit("/", 1)[-1])
+        file = copy_asset(assets_dir, objects, f"minecraft/sounds/music/{path}.ogg", path.rsplit("/", 1)[-1])
         entries.append((title, file, "generic"))
 
     lines = ["# C418 tracks extracted from Minecraft. disc: texture name, 'generic' if none.", "tracks:"]
