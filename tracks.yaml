@@ -1,0 +1,134 @@
+# C418 tracks extracted from Minecraft. disc: texture name, 'generic' if none.
+tracks:
+  - title: "13"
+    file: 13.ogg
+    disc: "13"
+  - title: "cat"
+    file: cat.ogg
+    disc: "cat"
+  - title: "blocks"
+    file: blocks.ogg
+    disc: "blocks"
+  - title: "chirp"
+    file: chirp.ogg
+    disc: "chirp"
+  - title: "far"
+    file: far.ogg
+    disc: "far"
+  - title: "mall"
+    file: mall.ogg
+    disc: "mall"
+  - title: "mellohi"
+    file: mellohi.ogg
+    disc: "mellohi"
+  - title: "stal"
+    file: stal.ogg
+    disc: "stal"
+  - title: "strad"
+    file: strad.ogg
+    disc: "strad"
+  - title: "ward"
+    file: ward.ogg
+    disc: "ward"
+  - title: "11"
+    file: 11.ogg
+    disc: "11"
+  - title: "wait"
+    file: wait.ogg
+    disc: "wait"
+  - title: "Minecraft"
+    file: minecraft.ogg
+    disc: "generic"
+  - title: "Clark"
+    file: clark.ogg
+    disc: "generic"
+  - title: "Sweden"
+    file: sweden.ogg
+    disc: "generic"
+  - title: "Subwoofer Lullaby"
+    file: subwoofer_lullaby.ogg
+    disc: "generic"
+  - title: "Living Mice"
+    file: living_mice.ogg
+    disc: "generic"
+  - title: "Haggstrom"
+    file: haggstrom.ogg
+    disc: "generic"
+  - title: "Danny"
+    file: danny.ogg
+    disc: "generic"
+  - title: "Key"
+    file: key.ogg
+    disc: "generic"
+  - title: "Oxygène"
+    file: oxygene.ogg
+    disc: "generic"
+  - title: "Dry Hands"
+    file: dry_hands.ogg
+    disc: "generic"
+  - title: "Wet Hands"
+    file: wet_hands.ogg
+    disc: "generic"
+  - title: "Mice on Venus"
+    file: mice_on_venus.ogg
+    disc: "generic"
+  - title: "Biome Fest"
+    file: biome_fest.ogg
+    disc: "generic"
+  - title: "Blind Spots"
+    file: blind_spots.ogg
+    disc: "generic"
+  - title: "Haunt Muskie"
+    file: haunt_muskie.ogg
+    disc: "generic"
+  - title: "Aria Math"
+    file: aria_math.ogg
+    disc: "generic"
+  - title: "Dreiton"
+    file: dreiton.ogg
+    disc: "generic"
+  - title: "Taswell"
+    file: taswell.ogg
+    disc: "generic"
+  - title: "Mutation"
+    file: mutation.ogg
+    disc: "generic"
+  - title: "Moog City 2"
+    file: moog_city_2.ogg
+    disc: "generic"
+  - title: "Beginning 2"
+    file: beginning_2.ogg
+    disc: "generic"
+  - title: "Floating Trees"
+    file: floating_trees.ogg
+    disc: "generic"
+  - title: "The End"
+    file: the_end.ogg
+    disc: "generic"
+  - title: "Boss"
+    file: boss.ogg
+    disc: "generic"
+  - title: "Alpha"
+    file: alpha.ogg
+    disc: "generic"
+  - title: "Concrete Halls"
+    file: concrete_halls.ogg
+    disc: "generic"
+  - title: "Dead Voxel"
+    file: dead_voxel.ogg
+    disc: "generic"
+  - title: "Warmth"
+    file: warmth.ogg
+    disc: "generic"
+  - title: "Ballad of the Cats"
+    file: ballad_of_the_cats.ogg
+    disc: "generic"
+  - title: "Axolotl"
+    file: axolotl.ogg
+    disc: "generic"
+  - title: "Dragon Fish"
+    file: dragon_fish.ogg
+    disc: "generic"
+  - title: "Shuniji"
+    file: shuniji.ogg
+    disc: "generic"

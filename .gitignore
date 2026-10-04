@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+# C418 music is copyrighted: extracted locally with extract_music.py, never pushed
+sounds/*
+!sounds/.gitkeep
+# Minecraftia font (Andrew Tyler, dafont): download it locally
+fonts/*.ttf
