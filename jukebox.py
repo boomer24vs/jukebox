@@ -4,6 +4,7 @@ import colorsys
 import math
 import os
 import random
+import time
 from pathlib import Path
 
 PROJECT_DIR = Path(__file__).resolve().parent
@@ -11,7 +12,7 @@ PROJECT_DIR = Path(__file__).resolve().parent
 PRESET = {
     "window_size": (400, 400),
     "window_top_margin": 40,          # distance from the top of the screen
-    "always_on_top": True,
+    "window_layer": "below",          # "below": under every app, "normal", or "top": always on top
     "transparent": True,
     "fallback_background": (29, 29, 29),
     "fps": 60,
@@ -90,7 +91,7 @@ def open_window(p):
     width, height = p["window_size"]
     desktop_w, _ = pygame.display.get_desktop_sizes()[0]
     window = pygame.Window("Jukebox", (width, height), ((desktop_w - width) // 2, p["window_top_margin"]),
-                           borderless=True, always_on_top=p["always_on_top"])
+                           borderless=True, always_on_top=p["window_layer"] == "top")
     return window.get_surface(), window
 
 
@@ -129,6 +130,29 @@ def find_x_window():
         if pid and pid.value[0] == os.getpid():
             return candidate
     return None
+
+
+def wait_for_x_window(timeout=1.0):
+    """GNOME lists the window only once it is mapped: pump events until it shows up."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        pygame.event.pump()
+        x_window = find_x_window()
+        if x_window is not None:
+            return x_window
+        time.sleep(0.02)
+    return None
+
+
+def keep_below(x_window):
+    """Ask GNOME to keep the window under all others (_NET_WM_STATE_BELOW), like a desktop widget."""
+    from Xlib import X
+    from Xlib.protocol import event
+    wm_state = XDISPLAY.intern_atom("_NET_WM_STATE")
+    below = XDISPLAY.intern_atom("_NET_WM_STATE_BELOW")
+    message = event.ClientMessage(window=x_window, client_type=wm_state, data=(32, [1, below, 0, 1, 0]))
+    XDISPLAY.screen().root.send_event(message, event_mask=X.SubstructureRedirectMask | X.SubstructureNotifyMask)
+    XDISPLAY.flush()
 
 
 def move_window(window, x_window, pos):
@@ -238,7 +262,11 @@ def main(p=PRESET):
     notes, note_timer = [], 0.0
     click_t = math.inf
     press_pos, dragging, hover = None, False, False
-    drag_start, drag_last, x_window = None, None, None
+    drag_start, drag_last = None, None
+    present(window, screen, pygame.Surface(p["window_size"], pygame.SRCALPHA), transparent)
+    x_window = wait_for_x_window()
+    if x_window is not None and p["window_layer"] == "below":
+        keep_below(x_window)
     now = 0.0
 
     def on_cube(pos):
@@ -260,7 +288,6 @@ def main(p=PRESET):
                 press_pos, dragging = event.pos, False
                 drag_start = (window.position, pointer_on_screen())
                 drag_last = window.position
-                x_window = x_window or find_x_window()
             elif event.type == pygame.MOUSEMOTION:
                 hover = on_cube(event.pos)
                 if press_pos and not dragging:
