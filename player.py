@@ -65,9 +65,13 @@ class Player:
         """Stop the current track and start a random one, never the one just played."""
         last = self.current or self.previous
         choices = [t for t in self.tracks if t is not last] or self.tracks
+        return self.play(random.choice(choices))
+
+    def play(self, track):
+        """Stop the current track and start this one."""
         pygame.mixer.music.stop()
-        self.previous = last
-        self.current = random.choice(choices)
+        self.previous = self.current or self.previous
+        self.current = track
         pygame.mixer.music.load(self.current["path"])
         pygame.mixer.music.set_volume(self.volume)
         pygame.mixer.music.play()
